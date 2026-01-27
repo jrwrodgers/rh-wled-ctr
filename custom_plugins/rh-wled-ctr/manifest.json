@@ -1,11 +1,11 @@
 {
     "name": "WLED Controller",
-    "domain": "",
+    "domain": "rh-wled-ctr",
     "author": "JRo",
-    "author_uri": "",
-    "description": "",
-    "info_uri": "",
-    "license": "",
+    "author_uri": "https://github.com/jrwrodgers",
+    "description": "WLED device controller for RotorHazard",
+    "documentation_uri": "https://github.com/jrwrodgers/rh-wled-ctr",
+    "license": "MIT",
     "license_uri": "https://github.com/RotorHazard/RotorHazard/blob/main/LICENSE",
     "version": "1.0.0",
     "required_rhapi_version": "1.2"
