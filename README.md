@@ -2,15 +2,24 @@ This plugin allows RotorHazard to connect to WLED device on your network and iss
 
 To learn more about WLED devices see: https://kno.wled.ge/
 
-Settings:  
+**Settings:**
+
+![Alt text](./assets/WLED_settings.jpg)  
+
 WLED Setup is available in the settings tab.  
 You will need to enter the ip of each of the wled devices on your network, comma separated.  
-You can assign the device a group number by preceeding the ip with group#: 
+You can assign the device a group number by preceding the ip with group#: 
 e.g. 1:192.168.1.100,1:192.168.1.104,2:192.168.1.103 
 
 If no group number is assigned then it will default to group 1
 
-Event Actions:
+**Test WLED:**   
+There are 2 buttons to test the WLED devices.  
+- All devices in the test group will blink green
+- Button to turn off all WLED devices.
+
+
+**Event Actions:**
 
 ![Alt text](./assets/event_settings.jpg)
 

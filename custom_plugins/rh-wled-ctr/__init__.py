@@ -4,10 +4,19 @@ logger = logging.getLogger(__name__)
 import RHData
 from eventmanager import Evt
 from EventActions import ActionEffect
-import socket
-from RHUI import UIField, UIFieldType, UIFieldSelectOption
+from RHUI import UIField, UIFieldType
 import requests
-import json
+
+def send_wled_json(devices: list, payload: dict, timeout: int = 2) -> None:
+    """Send a JSON payload to each WLED device. Logs errors but does not raise."""
+    for device in devices:
+        url = f"http://{device}/json/state"
+        try:
+            requests.post(url, json=payload, timeout=timeout)
+            logger.info(f"WLED packet sent to {device}")
+        except requests.RequestException as e:
+            logger.error(f"WLED request failed for {device}: {e}")
+
 
 def parse_rgb(s: str) -> tuple[int, int, int]:
    # logger.info(f"Parsing RGB: {s}")
@@ -38,6 +47,26 @@ def _int_or_default(val, default: int) -> int:
         return int(val)
     except (ValueError, TypeError):
         return default
+
+
+def _action_colour_to_rgb(val) -> tuple[int, int, int]:
+    """Convert action colour to (r,g,b). Accepts '255,0,0' or [255,0,0] / (255,0,0)."""
+    if val is None:
+        return (255, 255, 255)
+    if isinstance(val, (list, tuple)) and len(val) >= 3:
+        try:
+            r = max(0, min(255, int(val[0])))
+            g = max(0, min(255, int(val[1])))
+            b = max(0, min(255, int(val[2])))
+            return (r, g, b)
+        except (ValueError, TypeError):
+            pass
+    if isinstance(val, str) and val.strip():
+        try:
+            return parse_rgb(val)
+        except ValueError:
+            pass
+    return (255, 255, 255)
 
 
 def get_ips_for_group(s: str, group: int) -> list[str]:
@@ -73,6 +102,23 @@ def get_ips_for_group(s: str, group: int) -> list[str]:
         return []
 
 
+def get_all_ips(s: str) -> list[str]:
+    """Return all device IPs from the devices string (any group)."""
+    if not s or not isinstance(s, str):
+        return []
+    ips = []
+    for entry in str(s).split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+        if ":" in entry:
+            _, ip = entry.split(":", 1)
+            ips.append(ip.strip())
+        else:
+            ips.append(entry)
+    return ips
+
+
 def build_wled_json_packet(color, mode, speed, intensity, power):
     # WLED JSON API expects boolean true/false, not strings
     packet = {
@@ -95,14 +141,7 @@ class WLEDController():
     def WLEDMessageSend(self, action, args):
         try:
             # Use defaults when values are missing or empty
-            colour_str = action.get("wled_colour") or ""
-            if colour_str and str(colour_str).strip():
-                try:
-                    rgb = parse_rgb(str(colour_str))
-                except ValueError:
-                    rgb = (255, 255, 255)
-            else:
-                rgb = (255, 255, 255)
+            rgb = _action_colour_to_rgb(action.get("wled_colour"))
 
             speed = _int_or_default(action.get("wled_speed"), 128)
             intensity = _int_or_default(action.get("wled_intensity"), 128)
@@ -112,18 +151,15 @@ class WLEDController():
 
             wled_devices_str = self._rhapi.db.option("wled_devices") or ""
             wled_devices = get_ips_for_group(str(wled_devices_str), group=group)
+            #logger.info(f"WLED devices: {wled_devices}")
+                         
             payload = build_wled_json_packet(
                 power=power, color=rgb, mode=mode, speed=speed, intensity=intensity
             )
 
             if wled_devices:
-                for device in wled_devices:
-                    url = f"http://{device}/json/state"
-                    try:
-                        requests.post(url, json=payload, timeout=2)
-                        logger.info(f"WLED packet sent to {device} (mode={mode})")
-                    except requests.RequestException as e:
-                        logger.error(f"WLED request failed for {device}: {e}")
+                send_wled_json(wled_devices, payload)
+                logger.info(f"WLED packet sent to {len(wled_devices)} device(s) (mode={mode}, rgb={rgb[0]},{rgb[1]},{rgb[2]})")
             else:
                 logger.warning(f"No WLED devices for group {group}")
         except Exception as e:
@@ -154,6 +190,43 @@ def initialize(rhapi):
     rhapi.events.on(Evt.ACTIONS_INITIALIZE, wled_controller.register_handlers)
     rhapi.ui.register_panel('wled_options', 'WLED Setup', 'settings', order=0)
     rhapi.fields.register_option(UIField('wled_devices', 'WLED Devices', UIFieldType.TEXT), 'wled_options')
+    rhapi.fields.register_option(UIField('wled_test_group', 'Test Group', UIFieldType.TEXT), 'wled_options')
+
+    def on_test_led(*_args):
+        try:
+            group_val = rhapi.db.option("wled_test_group") or "1"
+            group = _int_or_default(group_val, 1)
+            devices_str = rhapi.db.option("wled_devices") or ""
+            devices = get_ips_for_group(str(devices_str), group=group)
+            if not devices:
+                logger.warning(f"No WLED devices for group {group}")
+                rhapi.ui.message_notify(f"No WLED devices for group {group}")
+                return
+            payload = build_wled_json_packet(
+                color=(0, 100, 0), mode=1, speed=128, intensity=128, power=1
+            )
+            send_wled_json(devices, payload)
+            rhapi.ui.message_notify(f"Test LED sent (green, blink) to group {group}")
+        except Exception as e:
+            logger.exception("Test LED failed")
+            rhapi.ui.message_notify(f"Test LED failed: {e}")
+
+    def on_turn_off(*_args):
+        try:
+            devices_str = rhapi.db.option("wled_devices") or ""
+            devices = get_all_ips(str(devices_str))
+            if not devices:
+                logger.warning("No WLED devices configured")
+                rhapi.ui.message_notify("No WLED devices configured")
+                return
+            send_wled_json(devices, {"on": False})
+            rhapi.ui.message_notify("Turned off all WLED devices")
+        except Exception as e:
+            logger.exception("Turn off LEDs failed")
+            rhapi.ui.message_notify(f"Turn off failed: {e}")
+
+    rhapi.ui.register_quickbutton('wled_options', 'wled_test_led', 'Test WLED Devices', on_test_led)
+    rhapi.ui.register_quickbutton('wled_options', 'wled_turn_off', 'Turn Off WLED Devices', on_turn_off)
 
 # WLED_MODES = {
 #     0: "Solid",
