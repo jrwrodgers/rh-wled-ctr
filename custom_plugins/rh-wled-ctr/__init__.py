@@ -6,15 +6,44 @@ from eventmanager import Evt
 from EventActions import ActionEffect
 from RHUI import UIField, UIFieldType
 import requests
+from requests.adapters import HTTPAdapter
+from . import wled_status_page
+
+
+def _post_no_pool(url: str, json_payload: dict, timeout: float = 2) -> bool:
+    """POST without connection pooling to avoid gevent/urllib3 cleanup issues."""
+    session = requests.Session()
+    adapter = HTTPAdapter(pool_connections=0, pool_maxsize=0)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    response = None
+    try:
+        response = session.post(url, json=json_payload, timeout=timeout, stream=False)
+        return response.status_code == 200
+    except requests.RequestException:
+        return False
+    finally:
+        if response is not None:
+            try:
+                response.close()
+            except Exception:
+                pass
+        try:
+            session.close()
+        except Exception:
+            pass
+
 
 def send_wled_json(devices: list, payload: dict, timeout: int = 2) -> None:
     """Send a JSON payload to each WLED device. Logs errors but does not raise."""
     for device in devices:
         url = f"http://{device}/json/state"
         try:
-            requests.post(url, json=payload, timeout=timeout)
-            logger.info(f"WLED packet sent to {device}")
-        except requests.RequestException as e:
+            if _post_no_pool(url, payload, timeout=float(timeout)):
+                logger.info(f"WLED packet sent to {device}")
+            else:
+                logger.error(f"WLED request failed for {device}")
+        except Exception as e:
             logger.error(f"WLED request failed for {device}: {e}")
 
 
@@ -134,6 +163,10 @@ def build_wled_json_packet(color, mode, speed, intensity, power):
     }
     return packet
 
+
+
+
+
 class WLEDController():
     def __init__(self, rhapi):
         self._rhapi = rhapi
@@ -185,12 +218,22 @@ class WLEDController():
                     args['register_fn'](effect)
 
             
+
+
 def initialize(rhapi):
     wled_controller = WLEDController(rhapi)
     rhapi.events.on(Evt.ACTIONS_INITIALIZE, wled_controller.register_handlers)
     rhapi.ui.register_panel('wled_options', 'WLED Setup', 'settings', order=0)
     rhapi.fields.register_option(UIField('wled_devices', 'WLED Devices', UIFieldType.TEXT), 'wled_options')
     rhapi.fields.register_option(UIField('wled_test_group', 'Test Group', UIFieldType.TEXT), 'wled_options')
+    
+    # Add link to WLED status webpage
+    rhapi.ui.register_markdown('wled_options', 'wled_status_link', 
+                                '<p><a href="/wled_status" target="_blank">View WLED Device Status Page</a></p>')
+    
+    # Set up WLED status webpage routes
+    wled_status_page.setup_wled_routes(rhapi)
+    rhapi.ui.blueprint_add(wled_status_page.bp)
 
     def on_test_led(*_args):
         try:
