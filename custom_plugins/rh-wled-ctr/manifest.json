@@ -5,7 +5,9 @@
     "author_uri": "https://github.com/jrwrodgers",
     "description": "WLED device controller for RotorHazard",
     "documentation_uri": "https://github.com/jrwrodgers/rh-wled-ctr",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "required_rhapi_version": "1.2",
-    "dependencies": ["requests>=2.28.0"]
+    "dependencies": ["requests>=2.28.0"],
+    "license": "GPL-3.0",
+    "license_uri": "https://github.com/jrwrodgers/rh-wled-ctr/blob/main/LICENSE" 
 }
