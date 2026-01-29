@@ -19,6 +19,16 @@ There are 2 buttons to test the WLED devices.
 - Button to turn off all WLED devices.
 
 
+
+**WLED Status Page:**
+
+![Alt text](./assets/WLED_status.jpg)
+ - See device status
+ - Change WLED Settings
+ - Scan and add WLED devices on your network
+
+
+
 **Event Actions:**
 
 ![Alt text](./assets/event_settings.jpg)
